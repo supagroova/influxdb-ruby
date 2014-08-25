@@ -13,6 +13,10 @@ module InfluxDB
                   :database,
                   :time_precision,
                   :use_ssl,
+                  :use_udp,
+                  :udp_port,
+                  :udp_host,
+                  :socket,
                   :stopped
 
     attr_accessor :queue, :worker
@@ -48,6 +52,9 @@ module InfluxDB
       @username = opts[:username] || "root"
       @password = opts[:password] || "root"
       @use_ssl = opts[:use_ssl] || false
+      @use_udp = opts[:use_udp] || false
+      @udp_host = opts[:udp_host] || 'localhost'
+      @udp_port = opts[:udp_port] || 4444
       @time_precision = opts[:time_precision] || "s"
       @initial_delay = opts[:initial_delay] || 0.01
       @max_delay = opts[:max_delay] || 30
@@ -63,7 +70,12 @@ module InfluxDB
       when false
         0
       end
-
+      
+      if @use_udp
+        @socket= UDPSocket.new
+        @socket.connect @udp_host, @udp_port
+      end
+      
       @worker = InfluxDB::Worker.new(self) if @async
 
       at_exit { stop! }
@@ -165,9 +177,13 @@ module InfluxDB
     end
 
     def _write(payload, time_precision=@time_precision)
-      url = full_url("/db/#{@database}/series", :time_precision => time_precision)
       data = JSON.generate(payload)
-      post(url, data)
+      if @use_udp
+        @socket.send data, 0
+      else
+        url = full_url("/db/#{@database}/series", :time_precision => time_precision)
+        post(url, data)
+      end
     end
 
     def query(query, time_precision=@time_precision)
@@ -192,6 +208,10 @@ module InfluxDB
 
     def stop!
       @stopped = true
+      if @use_udp && @socket
+        @socket.close
+        @socket = nil
+      end
     end
 
     def stopped?
