@@ -177,17 +177,16 @@ module InfluxDB
     end
 
     def _write(payload, time_precision=@time_precision)
-      data = JSON.generate(payload)
       if @use_udp
-        @socket.send data, 0
+        @socket.send payload, 0
       else
-        url = full_url("/db/#{@database}/series", :time_precision => time_precision)
-        post(url, data)
+        url = full_url("/write", :time_precision => time_precision)
+        post(url, payload)
       end
     end
 
     def query(query, time_precision=@time_precision)
-      url = full_url("/db/#{@database}/series", :q => query, :time_precision => time_precision)
+      url = full_url("/query", :q => query, :time_precision => time_precision)
       series = get(url)
 
       if block_given?
@@ -223,6 +222,7 @@ module InfluxDB
     def full_url(path, params={})
       params[:u] = @username
       params[:p] = @password
+      params[:db]= @database
 
       query = params.map { |k, v| [CGI.escape(k.to_s), "=", CGI.escape(v.to_s)].join }.join("&")
 
@@ -243,9 +243,8 @@ module InfluxDB
     end
 
     def post(url, data)
-      headers = {"Content-Type" => "application/json"}
       connect_with_retry do |http|
-        response = http.request(Net::HTTP::Post.new(url, headers), data)
+        response = http.request(Net::HTTP::Post.new(url), data)
         if response.kind_of? Net::HTTPSuccess
           return response
         elsif response.kind_of? Net::HTTPUnauthorized
@@ -257,9 +256,8 @@ module InfluxDB
     end
 
     def delete(url, data = nil)
-      headers = {"Content-Type" => "application/json"}
       connect_with_retry do |http|
-        response = http.request(Net::HTTP::Delete.new(url, headers), data)
+        response = http.request(Net::HTTP::Delete.new(url), data)
         if response.kind_of? Net::HTTPSuccess
           return response
         elsif response.kind_of? Net::HTTPUnauthorized
